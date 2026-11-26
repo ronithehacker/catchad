@@ -1,0 +1,8 @@
+{
+  "name": "catchad",
+  "version": "1.0.0",
+  "description": "Catchad – flerspelar-frågesport om fotboll",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

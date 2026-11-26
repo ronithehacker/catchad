@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Catchad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d0506;--panel:#1b0b0d;--line:#3a1619;--red:#e23b2e;--cream:#f3e9dc;--dim:#a8968a;--plus:#5fd39a;--minus:#ff7a6b}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--cream);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+body{min-height:100vh;background:radial-gradient(ellipse 80% 40% at 50% -5%,rgba(226,59,46,.38),transparent 70%),var(--bg);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+#app{max-width:520px;margin:0 auto;padding:18px 16px 40px}
+h1,h2,h3{font-family:"Bebas Neue",Impact,"Arial Narrow",sans-serif;font-weight:400;letter-spacing:.02em;margin:0}
+.logo{font-size:64px;line-height:1;color:var(--red);text-align:center;margin:18px 0 4px}
+.sub{text-align:center;color:var(--dim);margin:0 0 22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;margin:0 0 14px}
+.card h3{font-size:22px;margin-bottom:8px}
+.q h2{font-size:30px;line-height:1.1;margin-top:6px}
+.small{color:var(--dim);font-size:14px}
+input,button{font:inherit;color:inherit}
+input[type=text],input[type=number]{width:100%;min-height:52px;padding:10px 14px;background:#0d0506;border:1px solid var(--line);border-radius:6px;margin:0 0 10px}
+input:focus,button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.btn{display:block;width:100%;min-height:52px;border:1px solid var(--line);background:transparent;border-radius:6px;font-weight:600;cursor:pointer;margin:0 0 10px}
+.btn.red{background:var(--red);border-color:var(--red);color:#fff}
+.btn.know{border-color:var(--plus)}
+.btn.cheat{border-color:var(--red)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.45}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.two .btn{margin:0}
+.row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.row.off{opacity:.45}
+.row.win{color:var(--plus)}
+.code{font-family:"Bebas Neue",Impact,sans-serif;font-size:76px;line-height:1;text-align:center;color:var(--red);letter-spacing:.12em}
+.plus{color:var(--plus)}.minus{color:var(--minus)}
+.big{font-family:"Bebas Neue",Impact,sans-serif;font-size:44px;line-height:1;margin:2px 0 8px}
+.caught{color:var(--red)}
+.facit{border:1px dashed var(--red);border-radius:6px;padding:12px;margin:10px 0;font-size:20px}
+#err{color:var(--minus);min-height:22px;text-align:center}
+.sep{text-align:center;color:var(--dim);margin:6px 0 12px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const $ = s => document.querySelector(s);
+let S = null, me = null, es = null;
+try { me = JSON.parse(localStorage.getItem('catchad') || 'null'); } catch {}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nm = id => { const p = S && S.players.find(x => x.id === id); return p ? esc(p.name) : '?'; };
+const sign = n => (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n);
+const VOTE = { know: 'Kunskap', cheat: 'Fusk' };
+
+async function api(body) {
+  try {
+    const r = await fetch('/api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...(me || {}), ...body }) });
+    const j = await r.json(); if (j.error) setErr(j.error); else setErr(''); return j;
+  } catch { setErr('Ingen kontakt med servern.'); return {}; }
+}
+function setErr(t) { const e = $('#err'); if (e) e.textContent = t; }
+function connect() {
+  if (es) es.close();
+  es = new EventSource('/events?room=' + me.room + '&pid=' + me.pid);
+  es.onmessage = e => { S = JSON.parse(e.data); render(); };
+  es.onerror = () => { if (es.readyState === 2) { localStorage.removeItem('catchad'); me = null; S = null; render(); } };
+}
+async function enter(body) {
+  const j = await api(body); if (!j.pid) return;
+  me = { room: j.room, pid: j.pid }; localStorage.setItem('catchad', JSON.stringify(me)); connect();
+}
+
+function board() {
+  const sit = ['opener_result', 'round', 'reveal'].includes(S.phase) ? S.sitterId : null;
+  return '<div class="card"><h3>Poäng – först till ' + S.target + '</h3>' +
+    [...S.players].sort((a, b) => b.score - a.score).map(p =>
+      '<div class="row ' + (p.on ? '' : 'off') + '"><span>' + (p.id === sit ? '🪑 ' : '') + esc(p.name) + (p.id === S.you ? ' (du)' : '') + '</span><b>' + p.score + '</b></div>').join('') + '</div>';
+}
+const hostBtn = (a, label, cls) => '<button class="btn ' + (cls || '') + '" data-a="' + a + '">' + label + '</button>';
+
+function home() {
+  const pre = new URLSearchParams(location.search).get('rum') || '';
+  return '<h1 class="logo">CATCHAD</h1><p class="sub">Kunskap eller fusk? Fotbollsfrågor där du måste avslöja fuskaren.</p>' +
+    '<div class="card"><input type="text" id="name" maxlength="16" placeholder="Ditt namn" autocomplete="nickname">' +
+    hostBtn('create', 'Skapa rum', 'red') + '<div class="sep">eller gå med i ett rum</div>' +
+    '<input type="text" id="code" maxlength="4" placeholder="Rumskod" value="' + esc(pre) + '" autocapitalize="characters" autocomplete="off">' +
+    hostBtn('join', 'Gå med') + '</div><div id="err"></div>';
+}
+
+function render() {
+  const keep = {}; ['name', 'code', 'ans', 'guess', 'tgt'].forEach(id => { const el = document.getElementById(id); if (el) keep[id] = [el.value, document.activeElement === el]; });
+  $('#app').innerHTML = S ? game() : home();
+  for (const id in keep) { const el = document.getElementById(id); if (el) { el.value = keep[id][0]; if (keep[id][1]) el.focus(); } }
+  const t = $('#tgtv'), s = $('#tgt'); if (t && s) t.textContent = s.value;
+}
+
+function game() {
+  const host = S.hostId === S.you, r = S.result;
+  let h = '<h1 class="logo" style="font-size:40px;margin:6px 0 12px">CATCHAD</h1>';
+  if (S.phase === 'lobby') {
+    h += '<div class="card"><div class="small" style="text-align:center">Rumskod – gå till ' + esc(location.host) + ' och skriv in den</div><div class="code">' + esc(S.code) + '</div></div>' +
+      '<div class="card"><h3>Spelare (' + S.players.length + ')</h3>' + S.players.map(p => '<div class="row ' + (p.on ? '' : 'off') + '"><span>' + esc(p.name) + (p.id === S.you ? ' (du)' : '') + '</span><span class="small">' + (p.id === S.hostId ? 'värd' : '') + '</span></div>').join('') + '</div>';
+    if (host) h += '<div class="card"><h3>Spela till <span id="tgtv">100</span> poäng</h3><input type="range" id="tgt" min="50" max="200" step="10" value="100" style="width:100%;margin:6px 0 14px;accent-color:#e23b2e" oninput="document.getElementById(\'tgtv\').textContent=this.value">' + hostBtn('start', 'Starta spelet', 'red') + '<div class="small">Minst 2 spelare behövs.</div></div>';
+    else h += '<p class="sub">Väntar på att värden startar…</p>';
+  }
+  else if (S.phase === 'opener') {
+    h += '<div class="card q"><div class="small">Vem börjar i heta stolen? Närmast rätt svar vinner.</div><h2>' + esc(S.q) + '</h2></div>';
+    if (S.mine === null) h += '<div class="card"><input type="number" id="guess" inputmode="numeric" placeholder="Din gissning">' + hostBtn('guess', 'Lås gissning', 'red') + '</div>';
+    else h += '<div class="card">Din gissning: <b>' + S.mine + '</b></div>';
+    const wait = S.players.filter(p => p.on && !S.done.includes(p.id)).map(p => esc(p.name));
+    h += '<p class="sub">' + (wait.length ? 'Väntar på: ' + wait.join(', ') : '') + '</p>' + (host && S.done.length ? hostBtn('force', 'Gå vidare utan de som väntar') : '');
+  }
+  else if (S.phase === 'opener_result') {
+    h += '<div class="card"><div class="small">' + esc(r.q) + '</div><div class="big">' + r.answer + '</div>' +
+      r.list.map((x, i) => '<div class="row ' + (i === 0 ? 'win' : '') + '"><span>' + nm(x.id) + '</span><span>' + x.n + ' (' + (x.diff ? 'fel med ' + x.diff : 'exakt') + ')</span></div>').join('') + '</div>' +
+      '<div class="card"><h3>' + nm(r.winnerId) + ' börjar i heta stolen 🪑</h3></div>' + (host ? hostBtn('next', 'Första frågan', 'red') : '<p class="sub">Väntar på värden…</p>');
+  }
+  else if (S.phase === 'round') {
+    const sitter = S.sitterId === S.you;
+    h += '<div class="card q"><div class="small">' + (sitter ? 'Du sitter i heta stolen' : nm(S.sitterId) + ' sitter i heta stolen') + '</div><h2>' + esc(S.q) + '</h2></div>';
+    if (sitter) {
+      if (!S.mode) h += '<div class="card"><input type="text" id="ans" maxlength="80" placeholder="Skriv ditt svar" autocomplete="off">' + hostBtn('answer', 'Svara på kunskap', 'know') + hostBtn('cheat', 'Fuska – visa facit', 'cheat') + '</div>';
+      else if (S.mode === 'cheat') h += '<div class="card"><div class="small">Facit – låtsas att du kan det</div><div class="facit">' + esc(S.answer) + '</div><div class="small">Väntar på jägarna…</div></div>';
+      else h += '<div class="card">Svaret är inskickat. Väntar på jägarna…</div>';
+    } else {
+      if (!S.myVote) h += '<div class="card"><h3>Kan han svaret, eller fuskar han?</h3><div class="two"><button class="btn know" data-a="vote" data-v="know">Kunskap</button><button class="btn cheat" data-a="vote" data-v="cheat">Fusk</button></div></div>';
+      else h += '<div class="card">Du röstade <b>' + VOTE[S.myVote] + '</b>. Väntar på de andra…</div>';
+    }
+    const wait = S.players.filter(p => p.id !== S.sitterId && p.on && !S.voted.includes(p.id)).map(p => esc(p.name));
+    h += '<p class="sub">' + (S.sitDone ? '' : nm(S.sitterId) + ' har inte svarat än. ') + (wait.length ? 'Jägare som inte röstat: ' + wait.join(', ') : '') + '</p>' + (host && S.sitDone && S.voted.length ? hostBtn('force', 'Gå vidare utan de som väntar') : '');
+  }
+  else if (S.phase === 'reveal' || S.phase === 'over') {
+    const title = r.caught ? '<div class="big caught">CATCHAD!</div>' : r.mode === 'cheat' ? '<div class="big">Fuskade – men klarade sig</div>' : r.correct ? '<div class="big plus">Rätt på kunskap</div>' : '<div class="big minus">Fel svar</div>';
+    h += '<div class="card"><div class="small">' + esc(r.q) + '</div><div class="facit">' + esc(r.answer) + '</div>' + title +
+      '<div>' + nm(r.sitterId) + ' valde <b>' + (r.mode === 'cheat' ? 'fusk' : 'kunskap') + '</b>' + (r.mode === 'know' ? ' och svarade ”' + esc(r.text) + '”' : '') + '.</div></div>' +
+      '<div class="card"><h3>Jägarnas röster</h3>' + r.votes.map(x => { const ok = (x.v === 'cheat') === (r.mode === 'cheat'); return '<div class="row"><span>' + nm(x.id) + ' – ' + VOTE[x.v] + '</span><span class="' + (ok ? 'plus' : 'minus') + '">' + (ok ? 'rätt' : 'fel') + '</span></div>'; }).join('') + '</div>' +
+      '<div class="card"><h3>Poängförändring</h3>' + S.players.map(p => '<div class="row"><span>' + esc(p.name) + '</span><b class="' + (r.d[p.id] > 0 ? 'plus' : r.d[p.id] < 0 ? 'minus' : '') + '">' + sign(r.d[p.id] || 0) + '</b></div>').join('') + '</div>';
+    if (S.phase === 'over') h += '<div class="card"><div class="big plus">' + nm(r.winnerId) + ' vinner!</div></div>' + (host ? hostBtn('again', 'Spela igen', 'red') : '<p class="sub">Väntar på värden…</p>');
+    else {
+      h += '<div class="card"><h3>' + (r.winnerId ? nm(r.winnerId) + ' nådde ' + S.target + ' poäng!' : r.out ? nm(r.next) + ' tar heta stolen 🪑' : nm(r.sitterId) + ' sitter kvar 🪑') + '</h3></div>';
+      h += host ? hostBtn('next', r.winnerId ? 'Visa slutresultat' : 'Nästa fråga', 'red') : '<p class="sub">Väntar på värden…</p>';
+    }
+  }
+  return h + (S.phase === 'lobby' ? '' : board()) + '<div id="err"></div>';
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  const a = b.dataset.a, v = id => (document.getElementById(id) || {}).value;
+  if (a === 'create') { const n = (v('name') || '').trim(); if (!n) return setErr('Skriv ditt namn.'); me = null; enter({ type: 'create', name: n }); }
+  else if (a === 'join') { const n = (v('name') || '').trim(); if (!n) return setErr('Skriv ditt namn.'); me = null; enter({ type: 'join', name: n, room: (v('code') || '').trim().toUpperCase() }); }
+  else if (a === 'start') api({ type: 'start', target: v('tgt') });
+  else if (a === 'guess') { const n = v('guess'); if (n === '' || n == null) return setErr('Skriv en siffra.'); api({ type: 'guess', n }); }
+  else if (a === 'answer') { const t = (v('ans') || '').trim(); if (!t) return setErr('Skriv ett svar först.'); api({ type: 'answer', text: t }); }
+  else if (a === 'vote') api({ type: 'vote', v: b.dataset.v });
+  else api({ type: a });
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const id = e.target.id, a = { ans: 'answer', guess: 'guess', name: 'create', code: 'join' }[id];
+  if (a) { const btn = document.querySelector('[data-a="' + a + '"]'); if (btn) btn.click(); }
+});
+if (me) connect(); else render();
+</script>
+</body>
+</html>
